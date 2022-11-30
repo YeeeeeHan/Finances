@@ -13,7 +13,7 @@ import pandas as pd
 # Settings
 GoogleSearchUnknownCategory = False
 PrintSearchResults = False
-PrintLines = False
+PrintLines = True
 PrintPandas = True
 ToCSV = False
 BuildAggregates = True
@@ -80,7 +80,8 @@ def CreateEntry(exp):
 
 # --------------------------------------------------------------------------------------
 
-document_folder = "statements/dbswomen/"
+document_folder = "statements/hsbcrevolution/"
+# document_folder = "statements/dbswomen/"
 document_name = "november2022"
 document_link = document_folder + document_name + ".pdf"
 
@@ -89,12 +90,13 @@ df = pd.DataFrame(columns=["date", "name", "amount", "category", "keyword"])
 
 expList = []
 categoryMap = defaultdict(int)
-newTransactions = False
-with pdfplumber.open(document_link) as pdf:
+newTransactions = True
+with pdfplumber.open(document_link, password="16Jun1996160338") as pdf:
     for page in pdf.pages:
         text = page.extract_text()
         pLines = text.splitlines()
         for line in pLines:
+            print(line)
             if line == "NEW TRANSACTIONS LIM YEE HAN":
                 newTransactions = True
             if "STATEMENT ADJUSTED EXPIRED" in line:
