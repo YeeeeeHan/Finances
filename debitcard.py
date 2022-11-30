@@ -35,8 +35,7 @@ class Expenditure:
         # Handle category
         cat, subcat = DetermineCategory(exp[1])
         if cat is None:
-            print(exp[1])
-
+            pass
         return cat, subcat
 
 

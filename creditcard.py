@@ -5,21 +5,24 @@ from collections import defaultdict
 import constant
 import catfile
 from lib import util
+from quickstart import GoogleSearch
 
 import pdfplumber
 import pandas as pd
 
+# Settings
+GoogleSearchUnknownCategory = False
+PrintSearchResults = False
+PrintLines = False
+PrintPandas = True
+ToCSV = False
+BuildAggregates = True
+
+
 
 class CreditCardPatterns(Enum):
     Date = r'\d{1,2} (JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)'
-    Card = '\d\d\d\d-\d\d\d\d-\d\d\d\d-\d\d\d\d'
     Amount = r'\d{1,3}(,\d{3})*(\.\d+)'
-
-
-class Mode(Enum):
-    DEBIT_CARD_TRANSACTION = "Debit Card Transaction"
-    FUNDS_TRANSFER = "Funds Transfer"
-    GIRO = "GIRO"
 
 
 class CreditCardExpenditure:
@@ -28,13 +31,13 @@ class CreditCardExpenditure:
         self.date = ""
         self.amount = 0
         self.category = None
-        self.subcategory = None
+        self.keyword = None
 
 
-def DetermineCategory(s):
+def DetermineCategory(str):
     for cat in list(catfile.Category):
         for keyword in cat.value:
-            if keyword.lower() in s.lower():
+            if keyword.lower() in str.lower():
                 return cat.name, keyword
 
     return None, None
@@ -53,23 +56,39 @@ def ParseExpenditure(line):
     _line = util.del_pattern_from_text(CreditCardPatterns.Date.value, line)
     newExp.name = util.del_pattern_from_text(CreditCardPatterns.Amount.value, _line)
 
-    # Get cat and subCat
-    newExp.category, newExp.subcategory = DetermineCategory(newExp.name)
+    # Get Cat and subCat
+    newExp.category, newExp.keyword = DetermineCategory(newExp.name)
+    if newExp.category is None and GoogleSearchUnknownCategory:
+        keywords = GoogleSearch(newExp.name)
+        newExp.keyword = keywords
+        if PrintSearchResults:
+            print(f"SEARCH RESULTS: ExpName: {newExp.name} | Category: {newExp.category} | Keyword: {newExp.keyword} | GoogleTerms: {keywords}")
 
-    if newExp.category is None:
-        pass
     return newExp
+
+
+def CreateEntry(exp):
+    entry = pd.DataFrame.from_dict({
+        "date": [exp.date],
+        "name": [exp.name],
+        "amount": [exp.amount],
+        "category": [exp.category],
+        "keyword": [exp.keyword],
+    })
+    return entry
 
 
 # --------------------------------------------------------------------------------------
 
 document_folder = "statements/dbswomen/"
-document_name = "november2022.pdf"
-document_link = document_folder + document_name
+document_name = "november2022"
+document_link = document_folder + document_name + ".pdf"
 
 # Pandas
-df = pd.DataFrame(columns=["date", "name", "amount", "category", "subcategory"])
+df = pd.DataFrame(columns=["date", "name", "amount", "category", "keyword"])
 
+expList = []
+categoryMap = defaultdict(int)
 newTransactions = False
 with pdfplumber.open(document_link) as pdf:
     for page in pdf.pages:
@@ -82,20 +101,26 @@ with pdfplumber.open(document_link) as pdf:
                 newTransactions = False
 
             # Ensure that line is an entry that matches pattern "24 SEP ___"
-            # as well as not '31 DEC 2022', a random pattern found
             if newTransactions and util.is_pattern_in_text(CreditCardPatterns.Date.value, line):
                 exp = ParseExpenditure(line)
-                entry = pd.DataFrame.from_dict({
-                    "date": [exp.date],
-                    "name": [exp.name],
-                    "amount": [exp.amount],
-                    "category": [exp.category],
-                    "subcategory": [exp.subcategory],
-                })
+                expList.append(exp)
+                entry = CreateEntry(exp)
                 df = pd.concat([df, entry], ignore_index=True)
 
-df.to_csv("output.csv")
+                if PrintLines:
+                    print(f"Date:{exp.date} | Name:{exp.name} | Amount:{exp.amount}")
 
-# # Pretty print pandas
-# from tabulate import tabulate
-# print(tabulate(df, headers='keys', tablefmt='psql'))
+# Pretty print pandas
+if PrintPandas:
+    from tabulate import tabulate
+    print(tabulate(df, headers='keys', tablefmt='psql'))
+
+# To CSV
+if ToCSV:
+    df.to_csv(document_folder + "/outputs_" + document_name + ".csv")
+
+# Build aggregates
+if BuildAggregates:
+    for exp in expList:
+        categoryMap[exp.category] += round(float(exp.amount))
+    print(categoryMap)
