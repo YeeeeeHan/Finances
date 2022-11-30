@@ -1,0 +1,5 @@
+statements/
+catfile.py
+.idea
+*.DS
+credentials.py
