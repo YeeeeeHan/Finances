@@ -6,6 +6,9 @@ import constant
 import catfile
 from lib import util
 
+import pdfplumber
+import pandas as pd
+
 
 class CreditCardPatterns(Enum):
     Date = r'\d{1,2} (JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)'
@@ -58,47 +61,41 @@ def ParseExpenditure(line):
     return newExp
 
 
-# Returns bool whether Date pattern is found in s
-def PatternFound(pattern, s):
-    found = re.search(pattern, s)
-    if found:
-        return True
-    else:
-        return False
-
-
 # --------------------------------------------------------------------------------------
 
-reader = PdfReader("statements/dbswomen/november2022.pdf")
+document_folder = "statements/dbswomen/"
+document_name = "november2022.pdf"
+document_link = document_folder + document_name
 
-count = 0
-expList = []
-categoryMap = defaultdict(int)
-subcategoryMap = defaultdict(int)
+# Pandas
+df = pd.DataFrame(columns=["date", "name", "amount", "category", "subcategory"])
 
-for page in reader.pages[0:]:
-    pageLines = page.extract_text().split("\n")
+newTransactions = False
+with pdfplumber.open(document_link) as pdf:
+    for page in pdf.pages:
+        text = page.extract_text()
+        pLines = text.splitlines()
+        for line in pLines:
+            if line == "NEW TRANSACTIONS LIM YEE HAN":
+                newTransactions = True
+            if "STATEMENT ADJUSTED EXPIRED" in line:
+                newTransactions = False
 
-    # If page = THIS PAGE IS INTENTIONALLY LEFT, break
-    if 'THIS PAGE IS INTENTIONALLY LEFT' in pageLines[0]:
-        break
+            # Ensure that line is an entry that matches pattern "24 SEP ___"
+            # as well as not '31 DEC 2022', a random pattern found
+            if newTransactions and util.is_pattern_in_text(CreditCardPatterns.Date.value, line):
+                exp = ParseExpenditure(line)
+                entry = pd.DataFrame.from_dict({
+                    "date": [exp.date],
+                    "name": [exp.name],
+                    "amount": [exp.amount],
+                    "category": [exp.category],
+                    "subcategory": [exp.subcategory],
+                })
+                df = pd.concat([df, entry], ignore_index=True)
 
-    regexp = re.compile(constant.entryPattern)
+df.to_csv("output.csv")
 
-    for line in pageLines:
-        print(line + "\n")
-        # Ensure that line is an entry that matches pattern "24 SEP ___"
-        # as well as not '31 DEC 2022', a random pattern found
-        if util.is_pattern_in_text(CreditCardPatterns.Date.value, line) and line != '31 DEC 2022':
-            exp = ParseExpenditure(line)
-            # if exp:
-            #     expList.append(line)
-
-# for exp in expList:
-#     categoryMap[exp.category] += round(exp.amount)
-#     subcategoryMap[exp.subcategory] += round(exp.amount)
-#
-#     if exp.category == Category.TRANSPORT.name:
-#         print(exp.name, exp.amount)
-#
-# print(categoryMap)
+# # Pretty print pandas
+# from tabulate import tabulate
+# print(tabulate(df, headers='keys', tablefmt='psql'))
